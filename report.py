@@ -70,9 +70,19 @@ Regras:
   aos 8 critérios de escolha de canal.
 - Em "metricas", comente CAC, LTV e Payback com base no que foi informado (aponte lacunas
   se o cliente não souber os números).
-- Em "recomendacoes", traga exatamente 3 recomendações gerais e prioritárias.
-- Em "quadro_resumo", responda de forma direta aos 8 pontos de clareza.
-- Em "conclusao", escreva um fechamento objetivo do diagnóstico."""
+- Em "recomendacoes", traga exatamente 3 recomendações prioritárias fundamentadas nas
+  MELHORES PRÁTICAS de marketing e aquisição (posicionamento e proposta de valor clara,
+  foco no ICP certo, geração e captura de demanda, escolha de canais mensuráveis e economia
+  de aquisição saudável — CAC, LTV e Payback). Cada recomendação deve ser acionável e
+  conectada às respostas e ao contexto do cliente, nunca genérica.
+- Em "quadro_resumo", RESUMA de forma curta e direta o que as respostas do cliente revelaram
+  em cada um dos 8 pontos (1 a 2 frases por ponto, sintetizando o que ele mesmo respondeu no
+  questionário). Não invente dados que ele não informou; quando algo ficar indefinido, diga
+  que ainda precisa ser definido.
+- Em "conclusao", escreva um fechamento objetivo dizendo, em ordem de prioridade, O QUE A
+  EMPRESA DEVE FAZER PRIMEIRO — os primeiros passos concretos a partir deste diagnóstico — e
+  termine com um convite natural para procurar o apoio do Dr. Carlos Torres e da CT
+  Consultoria para resolver esse desafio, sem soar como propaganda forçada."""
 
 
 _LISTA = {"type": "array", "items": {"type": "string"}}
@@ -219,8 +229,9 @@ def build_pdf(lead, analysis):
     sub = ParagraphStyle("sub", parent=ss["Normal"], textColor=teal, fontSize=11,
                          alignment=TA_CENTER, spaceAfter=2)
     sec = ParagraphStyle("sec", parent=ss["Heading2"], textColor=colors.white,
-                         backColor=navy, fontSize=12, leading=20, spaceBefore=14,
-                         spaceAfter=8, leftIndent=6, borderPadding=(4, 6, 4, 6))
+                         backColor=navy, fontSize=12, leading=17, spaceBefore=14,
+                         spaceAfter=8, leftIndent=0, rightIndent=0,
+                         borderPadding=(5, 8, 5, 8))
     body = ParagraphStyle("body", parent=ss["Normal"], fontSize=10, leading=15,
                           alignment=TA_JUSTIFY, textColor=colors.HexColor("#222222"))
     bullet = ParagraphStyle("bul", parent=body, leftIndent=4)
