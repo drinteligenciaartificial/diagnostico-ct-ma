@@ -1,0 +1,560 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Diagnóstico de Marketing e Aquisição - CT Consultoria</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='funil.css') }}">
+</head>
+<body>
+  <div class="quiz-header">
+    <div class="row">
+      <button class="back" id="back" title="Voltar">‹</button>
+      <div class="brand">
+        <img class="brand-logo" src="{{ url_for('static', filename='logo-ct.png') }}" alt="CT Consultoria e Assessoria">
+        <span class="brand-name">CT Consultoria e Assessoria</span>
+      </div>
+      <div class="count" id="count"></div>
+    </div>
+    <div class="progress"><i id="bar"></i></div>
+  </div>
+
+  <div class="stage">
+    <div class="card">
+      <div class="screen active" id="screen"></div>
+    </div>
+  </div>
+
+  <div class="foot">
+    Dr. Carlos Torres · CT - Consultoria e Assessoria LTDA · &copy; 2024
+    &nbsp;·&nbsp; <a href="{{ url_for('admin') }}">Painel do consultor</a>
+  </div>
+
+<script>
+const FIELDS = {{ fields|tojson }};
+const GROUPS = {{ groups|tojson }};
+const PAISES = {{ paises_ddi|tojson }};
+const LOC_URL = "{{ url_for('static', filename='br_localidades.json') }}";
+const SUBMIT_URL = "{{ url_for('enviar') }}";
+
+// limites dos sliders numericos (campo -> {min,max,unidade})
+const SLIDERS = {
+  funcionarios: {min:0,  max:300, def:10, unit:"funcionário(s)", plus:true},
+};
+
+const state = { cadastro:{}, answers:{}, idx:0, history:[] };
+let LOC = null;
+
+function fieldByName(n){ return FIELDS.find(f => f.name === n); }
+
+/* ---------------- monta a lista de telas (ordem do funil) ---------------
+   Abre com toques rápidos em cartões (baixa fricção), intercala telas de
+   convencimento (framework / prova social) e só captura o contato no final,
+   antes do carregamento que gera o PDF. */
+function buildScreens(){
+  const S = [];
+  S.push({kind:"intro"});
+
+  // aquecimento em cartoes rapidos sobre a empresa (função, tamanho, faturamento)
+  S.push({kind:"field", f: fieldByName("funcao")});        // cards
+  S.push({kind:"field", f: fieldByName("funcionarios")});  // slider
+  S.push({kind:"field", f: fieldByName("faturamento")});   // cards
+
+  // informativo - o método (transição para o questionário)
+  S.push({kind:"info",
+    icon:"🎯", eyebrow:"Como vamos construir",
+    title:"Marketing que funciona não começa no anúncio. Começa na estratégia.",
+    html:`<p>A maior parte das empresas gasta energia em posts e tráfego sem antes responder
+      às perguntas que realmente movem a aquisição. Aqui a gente inverte a ordem. A partir
+      das suas respostas, montamos um diagnóstico profissional passando por:</p>
+      <ul class="checklist">
+        <li>Clareza do fundador — o que você vende, para quem e com qual vantagem</li>
+        <li>Conhecimento do mercado — quem cresce, onde está a margem e a recorrência</li>
+        <li>ICP e proposta de valor — quem atrair e por que escolher você</li>
+        <li>Canais e métricas — onde disputar atenção e CAC, LTV e Payback</li>
+      </ul>
+      <p>São poucos minutos. Responda com o máximo de detalhe que conseguir —
+      quanto mais honesta a resposta, mais afiada fica a estratégia.</p>`});
+
+  // questionario: grupos na ordem do config, com tela de abertura por grupo
+  GROUPS.forEach(g => {
+    S.push({kind:"gintro", g});
+    g.perguntas.forEach((p, i) => {
+      S.push({kind:"question", qid:`${g.id}_${i}`, gtitulo:g.titulo, p:p});
+    });
+
+    // informativo - prova social, logo após o bloco de MERCADO
+    if(g.id === "mercado"){
+      S.push({kind:"info",
+        icon:"📈", eyebrow:"Onde o dinheiro está",
+        title:"Quem cresce não anuncia mais. Anuncia melhor — para a pessoa certa.",
+        html:`<p>Na maioria das empresas que passam pela CT, o gargalo não é falta de esforço em
+          marketing. É <b>falta de clareza sobre quem atrair, qual proposta de valor comunicar e
+          em quais canais aparecer</b>. Quando isso se estrutura, a aquisição deixa de ser sorte
+          e passa a ser processo.</p>
+          <div class="quote">"Eu anunciava para todo mundo e atraía o cliente errado.
+          Faltava saber quem realmente valia a pena atrair." — relato recorrente de fundadores.</div>
+          <div class="stat"><b>1</b><span>proposta de valor clara vale mais que 10 canais dispersos</span></div>
+          <div class="stat"><b>CAC</b><span>só faz sentido quando comparado ao LTV e ao Payback</span></div>
+          <p>Continue. As próximas respostas são o que transformam o diagnóstico em plano.</p>`});
+    }
+  });
+
+  // carregamento curto antes do contato
+  S.push({kind:"load", text:"Cruzando suas respostas com o framework…", dur:2200});
+
+  // captura de contato (final)
+  S.push({kind:"info",
+    icon:"📨", eyebrow:"Quase lá",
+    title:"Confirme seus dados e receba agora o seu relatório em PDF.",
+    html:`<p>Suas respostas já estão prontas para virar um diagnóstico. Informe seus dados
+      para gerarmos o relatório completo em PDF da sua estratégia de marketing e aquisição —
+      com ICP, proposta de valor, canais e métricas.</p>`});
+  const contactStart = S.length;   // 1a tela de contato (usada pelo botao "Corrigir")
+  S.push({kind:"field", f: fieldByName("nome")});
+  S.push({kind:"tel"});
+  S.push({kind:"field", f: fieldByName("email")});
+  S.push({kind:"field", f: fieldByName("empresa")});
+  S.push({kind:"local"});
+
+  // tela de confirmacao dos dados de contato (Última etapa)
+  S.push({kind:"confirm", editIdx: contactStart});
+
+  // carregamento final -> gera e envia
+  S.push({kind:"load", text:"Construindo sua estratégia com IA…",
+          sub:"Definindo ICP, proposta de valor, canais e métricas a partir das suas respostas.",
+          dur:60000, final:true});
+  return S;
+}
+let SCREENS = [];
+
+/* ---------------- helpers de render ---------------- */
+const stageEl = () => document.getElementById("screen");
+function setScreen(html){
+  const el = stageEl();
+  el.classList.remove("active");
+  el.innerHTML = html;
+  void el.offsetWidth;       // reinicia animacao
+  el.classList.add("active");
+  window.scrollTo(0,0);
+}
+function esc(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+function updateChrome(){
+  // progresso ignora a tela de intro
+  const total = SCREENS.length - 1;
+  const pct = Math.min(100, Math.round((state.idx) / total * 100));
+  document.getElementById("bar").style.width = pct + "%";
+  const back = document.getElementById("back");
+  back.classList.toggle("show", state.idx > 0 && !SCREENS[state.idx]?.final);
+  document.getElementById("count").textContent =
+    state.idx === 0 ? "" : `${state.idx} / ${total}`;
+}
+
+function go(nextIdx){
+  state.history.push(state.idx);
+  state.idx = nextIdx;
+  render();
+}
+function next(){ go(state.idx + 1); }
+function back(){
+  if(state.history.length){ state.idx = state.history.pop(); render(); }
+}
+
+/* ---------------- render por tipo ---------------- */
+function render(){
+  const sc = SCREENS[state.idx];
+  updateChrome();
+  if(sc.kind === "intro")    return renderIntro();
+  if(sc.kind === "info")     return renderInfo(sc);
+  if(sc.kind === "gintro")   return renderGroupIntro(sc);
+  if(sc.kind === "question") return renderQuestion(sc);
+  if(sc.kind === "field")    return renderField(sc.f);
+  if(sc.kind === "tel")      return renderTel();
+  if(sc.kind === "local")    return renderLocal();
+  if(sc.kind === "confirm")  return renderConfirm(sc);
+  if(sc.kind === "load")     return renderLoad(sc);
+}
+
+/* ---- confirmacao dos dados de contato (Última etapa) ---- */
+function renderConfirm(sc){
+  const nome  = state.cadastro["nome"] || "";
+  const tel   = state.cadastro["telefone"] || "";
+  const email = state.cadastro["email"] || "";
+  setScreen(`
+    <div class="info-icon">📨</div>
+    <p class="eyebrow">Última etapa</p>
+    <h1 class="q-title">Falta pouco para você receber sua estratégia.</h1>
+    <div class="info-body">
+      <p>Clique no botão ✅ para confirmar seus dados e fazer o download automático
+      do seu relatório completo em PDF do diagnóstico de marketing e aquisição.</p>
+      <p>Se seus dados não estão corretos, clique em ❌ para corrigi-los.</p>
+    </div>
+    <div class="confirm-data">
+      <div class="cd-row"><span class="cd-lbl">Nome</span><span class="cd-val">${esc(nome)}</span></div>
+      <div class="cd-row"><span class="cd-lbl">Telefone</span><span class="cd-val">${esc(tel)}</span></div>
+      <div class="cd-row"><span class="cd-lbl">E-mail</span><span class="cd-val">${esc(email)}</span></div>
+    </div>
+    <button class="btn confirm-yes" id="ok">✅ Confirmar e baixar estratégia</button>
+    <button class="btn-alt confirm-no" id="fix">❌ Corrigir meus dados</button>`);
+  document.getElementById("ok").onclick = next;
+  document.getElementById("fix").onclick = () => { state.idx = sc.editIdx; render(); };
+}
+
+function renderIntro(){
+  setScreen(`
+    <div class="info-icon">🎯</div>
+    <p class="eyebrow">Diagnóstico de marketing e aquisição · gratuito</p>
+    <h1 class="q-title">Pare de anunciar no escuro. Descubra a estratégia certa para atrair e conquistar clientes.</h1>
+    <p class="q-sub">Responda a algumas perguntas e receba um diagnóstico profissional — com ICP,
+       proposta de valor, canais e métricas — feito com um framework estratégico e análise por
+       inteligência artificial.</p>
+    <button class="btn" id="go">Começar meu diagnóstico →</button>`);
+  document.getElementById("go").onclick = next;
+}
+
+function renderInfo(sc){
+  setScreen(`
+    <div class="info-icon">${sc.icon}</div>
+    ${sc.eyebrow ? `<p class="eyebrow">${esc(sc.eyebrow)}</p>` : ""}
+    <h1 class="q-title">${esc(sc.title)}</h1>
+    <div class="info-body">${sc.html}</div>
+    <button class="btn" id="go">Continuar →</button>`);
+  document.getElementById("go").onclick = next;
+}
+
+function renderGroupIntro(sc){
+  const g = sc.g;
+  setScreen(`
+    <p class="eyebrow">Etapa do framework</p>
+    <h1 class="q-title">${esc(g.titulo)}</h1>
+    <p class="q-sub">${esc(g.descricao)}</p>
+    <button class="btn" id="go">Vamos lá →</button>`);
+  document.getElementById("go").onclick = next;
+}
+
+function renderQuestion(sc){
+  const p = sc.p;
+  const isObj = p && typeof p === "object";
+  const tipo = isObj ? (p.tipo || "texto") : "texto";
+  const texto = isObj ? p.texto : p;
+  if(tipo === "sim_nao") return renderChoiceQ(sc, texto, ["Sim", "Não"]);
+  if(tipo === "opcoes")  return renderChoiceQ(sc, texto, p.opcoes);
+  if(tipo === "escala")  return renderScaleQ(sc, texto, p.min, p.max);
+
+  // texto livre (padrao)
+  const val = state.answers[sc.qid] || "";
+  setScreen(`
+    <p class="eyebrow">${esc(sc.gtitulo)}</p>
+    <h1 class="q-title">${esc(texto)}</h1>
+    <textarea class="fld" id="inp" placeholder="Escreva sua resposta…">${esc(val)}</textarea>
+    <button class="btn" id="go">Continuar →</button>
+    <button class="skip" id="skip">Pular esta pergunta</button>`);
+  const inp = document.getElementById("inp");
+  document.getElementById("go").onclick = () => { state.answers[sc.qid] = inp.value.trim(); next(); };
+  document.getElementById("skip").onclick = () => { state.answers[sc.qid] = ""; next(); };
+}
+
+/* pergunta de escolha (Sim/Não ou opcoes): cards que ja avancam ao clicar */
+function renderChoiceQ(sc, texto, opcoes){
+  const cur = state.answers[sc.qid] || "";
+  const opts = (opcoes || []).map(o =>
+    `<button class="opt ${cur===o?'sel':''}" data-v="${esc(o)}"><span>${esc(o)}</span></button>`).join("");
+  setScreen(`
+    <p class="eyebrow">${esc(sc.gtitulo)}</p>
+    <h1 class="q-title">${esc(texto)}</h1>
+    <div class="opts">${opts}</div>
+    <button class="skip" id="skip">Pular esta pergunta</button>`);
+  stageEl().querySelectorAll(".opt").forEach(b => b.onclick = () => {
+    state.answers[sc.qid] = b.dataset.v;
+    stageEl().querySelectorAll(".opt").forEach(x=>x.classList.remove("sel"));
+    b.classList.add("sel");
+    setTimeout(next, 220);
+  });
+  document.getElementById("skip").onclick = () => { state.answers[sc.qid] = ""; next(); };
+}
+
+/* pergunta de escala 1..N: botoes numerados que avancam ao clicar */
+function renderScaleQ(sc, texto, min, max){
+  const cur = state.answers[sc.qid] || "";
+  let btns = "";
+  for(let n=min; n<=max; n++){
+    btns += `<button class="scale-btn ${String(cur)===String(n)?'sel':''}" data-v="${n}">${n}</button>`;
+  }
+  setScreen(`
+    <p class="eyebrow">${esc(sc.gtitulo)}</p>
+    <h1 class="q-title">${esc(texto)}</h1>
+    <div class="scale">${btns}</div>
+    <div class="scale-legend"><span>${min} · menor</span><span>${max} · maior</span></div>
+    <button class="skip" id="skip">Pular esta pergunta</button>`);
+  stageEl().querySelectorAll(".scale-btn").forEach(b => b.onclick = () => {
+    state.answers[sc.qid] = b.dataset.v;
+    stageEl().querySelectorAll(".scale-btn").forEach(x=>x.classList.remove("sel"));
+    b.classList.add("sel");
+    setTimeout(next, 220);
+  });
+  document.getElementById("skip").onclick = () => { state.answers[sc.qid] = ""; next(); };
+}
+
+/* ---- campo do cadastro ---- */
+function renderField(f){
+  const label = f.label.replace(/\s*\*$/,"");
+  // SELECT como cards (poucas opcoes) ou dropdown (muitas)
+  if(f.type === "select"){
+    if(f.options.length <= 12) return renderCards(f, label);
+    return renderDropdown(f, label);
+  }
+  if(f.type === "multiselect") return renderMulti(f, label);
+  if(f.type === "number" && SLIDERS[f.name]) return renderSlider(f, label);
+
+  // text / email / number simples / textarea
+  const cur = state.cadastro[f.name] || (f.default || "");
+  let input;
+  if(f.type === "textarea"){
+    input = `<textarea class="fld" id="inp" placeholder="Escreva aqui…">${esc(cur)}</textarea>`;
+  } else {
+    const t = (f.type === "email") ? "email" : (f.type === "number" ? "number" : "text");
+    input = `<input class="fld" id="inp" type="${t}" value="${esc(cur)}" placeholder="Digite aqui…">`;
+  }
+  setScreen(`
+    <p class="eyebrow">Sobre você e a empresa</p>
+    <h1 class="q-title">${esc(label)}</h1>
+    ${input}
+    <div class="err" id="err">Este campo é obrigatório.</div>
+    <button class="btn" id="go">Continuar →</button>`);
+  const inp = document.getElementById("inp");
+  inp.focus();
+  inp.addEventListener("keydown", e => { if(e.key==="Enter" && f.type!=="textarea"){ e.preventDefault(); document.getElementById("go").click(); }});
+  document.getElementById("go").onclick = () => {
+    const v = inp.value.trim();
+    if(f.required && !v){ document.getElementById("err").classList.add("show"); return; }
+    state.cadastro[f.name] = v; next();
+  };
+}
+
+function renderCards(f, label){
+  const cur = state.cadastro[f.name];
+  const opts = f.options.map((o,i) =>
+    `<button class="opt ${cur===o?'sel':''}" data-v="${esc(o)}">
+       <span>${esc(o)}</span></button>`).join("");
+  setScreen(`
+    <p class="eyebrow">Sobre você e a empresa</p>
+    <h1 class="q-title">${esc(label)}</h1>
+    <div class="opts">${opts}</div>`);
+  stageEl().querySelectorAll(".opt").forEach(b => b.onclick = () => {
+    state.cadastro[f.name] = b.dataset.v;
+    stageEl().querySelectorAll(".opt").forEach(x=>x.classList.remove("sel"));
+    b.classList.add("sel");
+    setTimeout(next, 220);
+  });
+}
+
+function renderDropdown(f, label){
+  const cur = state.cadastro[f.name] || "";
+  const opts = `<option value="" disabled ${cur?"":"selected"}>Selecione…</option>` +
+    f.options.map(o => `<option value="${esc(o)}" ${cur===o?"selected":""}>${esc(o)}</option>`).join("");
+  setScreen(`
+    <p class="eyebrow">Sobre você e a empresa</p>
+    <h1 class="q-title">${esc(label)}</h1>
+    <select class="fld" id="inp">${opts}</select>
+    <div class="err" id="err">Selecione uma opção.</div>
+    <button class="btn" id="go">Continuar →</button>`);
+  const inp = document.getElementById("inp");
+  document.getElementById("go").onclick = () => {
+    if(f.required && !inp.value){ document.getElementById("err").classList.add("show"); return; }
+    state.cadastro[f.name] = inp.value; next();
+  };
+}
+
+function renderMulti(f, label){
+  const cur = (state.cadastro[f.name] || "").split("; ").filter(Boolean);
+  const opts = f.options.map(o => {
+    const on = cur.includes(o);
+    return `<button class="opt ${on?'sel':''}" data-v="${esc(o)}">
+       <span>${esc(o)}</span><span class="check">${on?'✓':''}</span></button>`;
+  }).join("");
+  setScreen(`
+    <p class="eyebrow">Sobre você e a empresa</p>
+    <h1 class="q-title">${esc(label)}</h1>
+    <p class="q-hint">Pode marcar mais de uma opção.</p>
+    <div class="opts">${opts}</div>
+    <div class="err" id="err">Marque pelo menos uma opção.</div>
+    <button class="btn" id="go">Continuar →</button>`);
+  stageEl().querySelectorAll(".opt").forEach(b => b.onclick = () => {
+    b.classList.toggle("sel");
+    b.querySelector(".check").textContent = b.classList.contains("sel") ? "✓" : "";
+  });
+  document.getElementById("go").onclick = () => {
+    const sel = [...stageEl().querySelectorAll(".opt.sel")].map(x=>x.dataset.v);
+    if(f.required && !sel.length){ document.getElementById("err").classList.add("show"); return; }
+    state.cadastro[f.name] = sel.join("; "); next();
+  };
+}
+
+function renderSlider(f, label){
+  const cfg = SLIDERS[f.name];
+  let cur = parseInt(state.cadastro[f.name],10);
+  if(isNaN(cur)) cur = cfg.def;
+  const fmt = v => (cfg.plus && v>=cfg.max ? cfg.max+"+" : v) + " " + cfg.unit;
+  setScreen(`
+    <p class="eyebrow">Sobre você e a empresa</p>
+    <h1 class="q-title">${esc(label)}</h1>
+    <div class="slider-val" id="val">${fmt(cur)}</div>
+    <input type="range" id="rng" min="${cfg.min}" max="${cfg.max}" value="${cur}">
+    <div class="slider-hint">Arraste para ajustar</div>
+    <button class="btn" id="go">Continuar →</button>`);
+  const rng = document.getElementById("rng"), val = document.getElementById("val");
+  rng.oninput = () => val.textContent = fmt(parseInt(rng.value,10));
+  document.getElementById("go").onclick = () => { state.cadastro[f.name] = rng.value; next(); };
+}
+
+/* ---- telefone (DDI + DDD + numero) ---- */
+function renderTel(){
+  const opts = PAISES.map(p =>
+    `<option value="${esc(p.ddi)}" ${p.nome==='Brasil'?'selected':''}>${esc(p.nome)} (${esc(p.ddi)})</option>`).join("");
+  setScreen(`
+    <p class="eyebrow">Contato</p>
+    <h1 class="q-title">Telefone / WhatsApp</h1>
+    <div class="tel-row">
+      <select class="fld" id="ddi">${opts}</select>
+      <input class="fld ddd" id="ddd" inputmode="numeric" maxlength="2" placeholder="DDD">
+      <input class="fld num" id="num" inputmode="numeric" maxlength="9" placeholder="9 dígitos">
+    </div>
+    <div class="err" id="err">Informe DDD e número.</div>
+    <button class="btn" id="go">Continuar →</button>`);
+  ["ddd","num"].forEach(id => document.getElementById(id).addEventListener("input",
+    e => e.target.value = e.target.value.replace(/\D/g,"")));
+  document.getElementById("go").onclick = () => {
+    const ddi=document.getElementById("ddi").value, ddd=document.getElementById("ddd").value.trim(), num=document.getElementById("num").value.trim();
+    if(!ddd || !num){ document.getElementById("err").classList.add("show"); return; }
+    state.cadastro["telefone"] = `${ddi} (${ddd}) ${num}`;
+    next();
+  };
+}
+
+/* ---- pais / estado / cidade ---- */
+function renderLocal(){
+  const paisOpts = PAISES.map(p =>
+    `<option value="${esc(p.nome)}" ${p.nome==='Brasil'?'selected':''}>${esc(p.nome)}</option>`).join("");
+  setScreen(`
+    <p class="eyebrow">Localização</p>
+    <h1 class="q-title">Onde fica a empresa?</h1>
+    <div class="stack">
+      <div><div class="lbl">País</div><select class="fld" id="pais">${paisOpts}</select></div>
+      <div id="brwrap">
+        <div class="lbl">Estado</div><select class="fld" id="estado"></select>
+        <div class="lbl">Cidade</div>
+        <select class="fld" id="cidade"><option value="" disabled selected>Selecione o estado…</option></select>
+      </div>
+      <div id="txtwrap" style="display:none">
+        <div class="lbl">Estado / Região</div><input class="fld" id="estado_txt" placeholder="Estado / Região">
+        <div class="lbl">Cidade</div><input class="fld" id="cidade_txt" placeholder="Cidade">
+      </div>
+    </div>
+    <div class="err" id="err">Preencha estado e cidade.</div>
+    <button class="btn" id="go">Continuar →</button>`);
+
+  const pais=document.getElementById("pais"), estado=document.getElementById("estado"),
+        cidade=document.getElementById("cidade"), brwrap=document.getElementById("brwrap"),
+        txtwrap=document.getElementById("txtwrap"),
+        estTxt=document.getElementById("estado_txt"), cidTxt=document.getElementById("cidade_txt");
+
+  function preencheEstados(){
+    const ufs = Object.entries(LOC.ufs).sort((a,b)=>a[1].localeCompare(b[1]));
+    estado.innerHTML = '<option value="" disabled selected>Selecione…</option>';
+    for(const [s,n] of ufs){ const o=document.createElement("option"); o.value=s; o.textContent=`${n} (${s})`; estado.appendChild(o); }
+  }
+  function preencheCidades(uf){
+    cidade.innerHTML = '<option value="" disabled selected>Selecione…</option>';
+    for(const n of (LOC.cidades[uf]||[])){ const o=document.createElement("option"); o.value=n; o.textContent=n; cidade.appendChild(o); }
+  }
+  estado.addEventListener("change", e => preencheCidades(e.target.value));
+  function aplicaPais(){
+    const br = pais.value === "Brasil";
+    brwrap.style.display = br ? "" : "none";
+    txtwrap.style.display = br ? "none" : "";
+  }
+  pais.addEventListener("change", aplicaPais);
+  if(LOC) preencheEstados();
+  aplicaPais();
+
+  document.getElementById("go").onclick = () => {
+    const br = pais.value === "Brasil";
+    let est, cid;
+    if(br){ est = estado.value; cid = cidade.value; }
+    else  { est = estTxt.value.trim(); cid = cidTxt.value.trim(); }
+    if(!est || !cid){ document.getElementById("err").classList.add("show"); return; }
+    state.cadastro["pais"] = pais.value;
+    state.cadastro["estado"] = est;
+    state.cadastro["cidade"] = cid;
+    next();
+  };
+}
+
+/* ---- carregamento (curto ou final que envia) ---- */
+function renderLoad(sc){
+  setScreen(`
+    <div class="loading">
+      <div class="spinner"></div>
+      <h1 class="q-title">${esc(sc.text)}</h1>
+      ${sc.sub ? `<p class="q-sub">${esc(sc.sub)}</p>` : ""}
+      <div class="load-bar"><i id="lb"></i></div>
+      <div class="load-pct" id="lp">0%</div>
+    </div>`);
+  document.getElementById("back").classList.remove("show");
+
+  if(sc.final){
+    // anima ate ~92% enquanto a IA gera; conclui quando o POST volta
+    animateBar(92, sc.dur);
+    submit();
+  } else {
+    animateBar(100, sc.dur, () => setTimeout(next, 250));
+  }
+}
+
+let _barTimer=null;
+function animateBar(target, dur, done){
+  clearInterval(_barTimer);
+  const lb=document.getElementById("lb"), lp=document.getElementById("lp");
+  const start=Date.now();
+  _barTimer=setInterval(()=>{
+    const p=Math.min(target, Math.round((Date.now()-start)/dur*target));
+    if(lb) lb.style.width=p+"%"; if(lp) lp.textContent=p+"%";
+    if(p>=target){ clearInterval(_barTimer); if(done) done(); }
+  },120);
+}
+function finishBar(){
+  clearInterval(_barTimer);
+  const lb=document.getElementById("lb"), lp=document.getElementById("lp");
+  if(lb) lb.style.width="100%"; if(lp) lp.textContent="100%";
+}
+
+async function submit(){
+  try{
+    const r = await fetch(SUBMIT_URL, {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({cadastro: state.cadastro, answers: state.answers}),
+    });
+    const data = await r.json();
+    if(!r.ok || !data.ok){
+      alert(data.erro || "Não foi possível enviar. Verifique os dados e tente novamente.");
+      back(); return;
+    }
+    finishBar();
+    setTimeout(()=> window.location.href = data.redirect, 400);
+  }catch(e){
+    alert("Falha de conexão ao enviar suas respostas. Tente novamente.");
+    back();
+  }
+}
+
+/* ---------------- start ---------------- */
+(async function(){
+  try{ LOC = await (await fetch(LOC_URL)).json(); }catch(e){ LOC = {ufs:{},cidades:{}}; }
+  SCREENS = buildScreens();
+  document.getElementById("back").onclick = back;
+  render();
+})();
+</script>
+</body>
+</html>

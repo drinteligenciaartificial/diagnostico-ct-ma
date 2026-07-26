@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card" style="max-width:420px;margin:0 auto">
+  <h1 class="title">Painel do consultor</h1>
+  <p class="subtitle">Acesso restrito.</p>
+  {% if erro %}<div class="erro">{{ erro }}</div>{% endif %}
+  <form method="post" action="{{ url_for('admin_login') }}">
+    <label for="senha">Senha</label>
+    <input id="senha" name="senha" type="password" required>
+    <button class="btn big" type="submit">Entrar</button>
+  </form>
+</div>
+{% endblock %}

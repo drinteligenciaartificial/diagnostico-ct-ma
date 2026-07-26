@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <div class="report-box">
+    <div class="ico">📄</div>
+    <h1 class="title">Sua estratégia está pronta</h1>
+    <p class="subtitle">{{ lead.get('empresa','') }}</p>
+    <p class="muted">A análise das suas respostas foi processada e o relatório completo
+       em PDF da sua estratégia de marketing e aquisição foi gerado. O download começa
+       automaticamente; se precisar, use o botão abaixo para baixá-lo novamente.</p>
+
+    <a class="btn big" id="dl" href="{{ url_for('relatorio_pdf') }}">⬇ Baixe aqui a estratégia gerada</a>
+    <div class="spin" id="spin">Gerando estratégia com IA, aguarde alguns segundos…</div>
+  </div>
+</div>
+<iframe id="auto" style="display:none"></iframe>
+<script>
+  const dl = document.getElementById('dl');
+  const spin = document.getElementById('spin');
+  const auto = document.getElementById('auto');
+  const url = "{{ url_for('relatorio_pdf') }}";
+
+  // Download automatico ao abrir a pagina. O relatorio e gerado uma unica vez
+  // e fica em cache no servidor: baixar de novo entrega o MESMO arquivo.
+  spin.style.display = 'block';
+  dl.style.opacity = .5; dl.style.pointerEvents = 'none';
+  auto.src = url;
+  setTimeout(() => {
+    spin.style.display = 'none';
+    dl.style.opacity = 1; dl.style.pointerEvents = 'auto';
+  }, 25000);
+</script>
+{% endblock %}

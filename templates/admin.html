@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h1 class="title">Painel do consultor</h1>
+  <p class="subtitle">Leads e respostas capturados pelo diagnóstico de marketing e aquisição.</p>
+
+  <table class="simple">
+    <tr><th>Armazenamento</th><td><b>{{ backend }}</b></td></tr>
+  </table>
+
+  <p style="margin-top:22px">Baixe os cadastros e respostas em Excel
+     (uma aba <b>Leads</b> e uma aba <b>Respostas</b>):</p>
+  <a class="btn" href="{{ url_for('admin_export') }}">⬇ Exportar (.xlsx)</a>
+  &nbsp;
+  <a class="btn ghost" href="{{ url_for('admin_logout') }}">Sair</a>
+</div>
+{% endblock %}
