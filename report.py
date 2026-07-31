@@ -178,11 +178,14 @@ def analyze(lead, answers):
     client = Anthropic()  # usa ANTHROPIC_API_KEY do ambiente
     msg = client.messages.create(
         model=MODEL,
-        max_tokens=4000,
+        max_tokens=8000,
         tools=[_ESTRATEGIA_TOOL],
         tool_choice={"type": "tool", "name": "registrar_estrategia"},
         messages=[{"role": "user", "content": _build_prompt(lead, answers)}],
     )
+    if msg.stop_reason == "max_tokens":
+        raise RuntimeError(
+            "A analise foi truncada pelo limite de tokens; aumente max_tokens.")
     for block in msg.content:
         if block.type == "tool_use" and block.name == "registrar_estrategia":
             return block.input
