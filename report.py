@@ -242,6 +242,13 @@ def build_pdf(lead, analysis):
     cellh = ParagraphStyle("cellh", parent=cell, textColor=colors.white,
                            fontName="Helvetica-Bold")
 
+    from xml.sax.saxutils import escape as _xml_escape
+
+    def esc(s):
+        # Escapa <, > e & do texto vindo da IA/cadastro: sem isso, trechos como
+        # "ticket <R$100" ou "margem <30%" sao lidos como tags e quebram o parser.
+        return _xml_escape("" if s is None else str(s))
+
     story = []
 
     def P(t, st=body):
@@ -250,7 +257,7 @@ def build_pdf(lead, analysis):
     def paras(txt):
         for par in str(txt or "").split("\n"):
             if par.strip():
-                P(par.strip())
+                P(esc(par.strip()))
 
     def bullets(items):
         items = [i for i in (items or []) if str(i).strip()]
@@ -258,7 +265,7 @@ def build_pdf(lead, analysis):
             P("<i>Nenhum item identificado.</i>")
             return
         story.append(ListFlowable(
-            [ListItem(Paragraph(str(i), bullet), leftIndent=10) for i in items],
+            [ListItem(Paragraph(esc(i), bullet), leftIndent=10) for i in items],
             bulletType="bullet", bulletColor=teal, start="•",
         ))
 
@@ -267,8 +274,8 @@ def build_pdf(lead, analysis):
     P("DIAGNÓSTICO DE MARKETING E AQUISIÇÃO", h1)
     P("CT - Consultoria e Assessoria | Dr. Carlos Torres", sub)
     data_str = dt.datetime.now().strftime("%d/%m/%Y")
-    P(f"Empresa: <b>{lead.get('empresa','')}</b> &nbsp;&nbsp; Responsável: "
-      f"<b>{lead.get('nome','')}</b> &nbsp;&nbsp; Data: <b>{data_str}</b>", sub)
+    P(f"Empresa: <b>{esc(lead.get('empresa',''))}</b> &nbsp;&nbsp; Responsável: "
+      f"<b>{esc(lead.get('nome',''))}</b> &nbsp;&nbsp; Data: <b>{data_str}</b>", sub)
     story.append(Spacer(1, 6))
 
     # Resumo executivo
@@ -293,12 +300,12 @@ def build_pdf(lead, analysis):
     P("PROPOSTA DE VALOR", sec)
     pv = analysis.get("proposta_valor", {}) or {}
     pv_rows = [
-        [Paragraph("<b>Cliente</b>", cellh), Paragraph(str(pv.get("cliente", "") or "—"), cell)],
-        [Paragraph("<b>Problema</b>", cellh), Paragraph(str(pv.get("problema", "") or "—"), cell)],
-        [Paragraph("<b>Método</b>", cellh), Paragraph(str(pv.get("metodo", "") or "—"), cell)],
-        [Paragraph("<b>Prova</b>", cellh), Paragraph(str(pv.get("prova", "") or "—"), cell)],
-        [Paragraph("<b>Resultado</b>", cellh), Paragraph(str(pv.get("resultado", "") or "—"), cell)],
-        [Paragraph("<b>Diferencial</b>", cellh), Paragraph(str(pv.get("diferencial", "") or "—"), cell)],
+        [Paragraph("<b>Cliente</b>", cellh), Paragraph(esc(pv.get("cliente", "") or "—"), cell)],
+        [Paragraph("<b>Problema</b>", cellh), Paragraph(esc(pv.get("problema", "") or "—"), cell)],
+        [Paragraph("<b>Método</b>", cellh), Paragraph(esc(pv.get("metodo", "") or "—"), cell)],
+        [Paragraph("<b>Prova</b>", cellh), Paragraph(esc(pv.get("prova", "") or "—"), cell)],
+        [Paragraph("<b>Resultado</b>", cellh), Paragraph(esc(pv.get("resultado", "") or "—"), cell)],
+        [Paragraph("<b>Diferencial</b>", cellh), Paragraph(esc(pv.get("diferencial", "") or "—"), cell)],
     ]
     lblw = 30 * mm
     pvt = Table(pv_rows, colWidths=[lblw, (w - 44 * mm) - lblw])
@@ -322,9 +329,9 @@ def build_pdf(lead, analysis):
                      Paragraph("Por quê", cellh)]]
         for c in canais:
             can_rows.append([
-                Paragraph(str(c.get("canal", "")), cell),
-                Paragraph(str(c.get("objetivo", "")), cell),
-                Paragraph(str(c.get("justificativa", "")), cell),
+                Paragraph(esc(c.get("canal", "")), cell),
+                Paragraph(esc(c.get("objetivo", "")), cell),
+                Paragraph(esc(c.get("justificativa", "")), cell),
             ])
         tot = w - 44 * mm
         ct = Table(can_rows, colWidths=[tot * 0.24, tot * 0.26, tot * 0.50])
@@ -343,9 +350,9 @@ def build_pdf(lead, analysis):
     # Metricas
     P("MÉTRICAS DE AQUISIÇÃO (CAC · LTV · PAYBACK)", sec)
     m = analysis.get("metricas", {}) or {}
-    P(f"<b>CAC:</b> {m.get('cac','') or '—'}")
-    P(f"<b>LTV:</b> {m.get('ltv','') or '—'}")
-    P(f"<b>Payback:</b> {m.get('payback','') or '—'}")
+    P(f"<b>CAC:</b> {esc(m.get('cac','') or '—')}")
+    P(f"<b>LTV:</b> {esc(m.get('ltv','') or '—')}")
+    P(f"<b>Payback:</b> {esc(m.get('payback','') or '—')}")
 
     # Scorecard
     P("SCORECARD DE MARKETING", sec)
@@ -354,9 +361,9 @@ def build_pdf(lead, analysis):
                 Paragraph("Justificativa", cellh)]]
     for item in sc:
         sc_rows.append([
-            Paragraph(str(item.get("dimensao", "")), cell),
-            Paragraph(f"<b>{item.get('nota','')}/5</b>", cell),
-            Paragraph(str(item.get("justificativa", "")), cell),
+            Paragraph(esc(item.get("dimensao", "")), cell),
+            Paragraph(f"<b>{esc(item.get('nota',''))}/5</b>", cell),
+            Paragraph(esc(item.get("justificativa", "")), cell),
         ])
     tot = w - 44 * mm
     st_ = Table(sc_rows, colWidths=[tot * 0.34, 16 * mm, tot - tot * 0.34 - 16 * mm])
@@ -387,7 +394,7 @@ def build_pdf(lead, analysis):
     qr_rows = []
     for pergunta, key in pontos:
         qr_rows.append([Paragraph(f"<b>{pergunta}</b>", cell),
-                        Paragraph(str(qr.get(key, "") or "—"), cell)])
+                        Paragraph(esc(qr.get(key, "") or "—"), cell)])
     qw = 55 * mm
     qt = Table(qr_rows, colWidths=[qw, (w - 44 * mm) - qw])
     qt.setStyle(TableStyle([
