@@ -7,6 +7,7 @@ Formato funil/quiz (uma tela por vez), no mesmo padrao do "desafio":
   4. /admin       -> painel do consultor: ver storage e exportar Excel
 """
 import os
+import threading
 
 from flask import (
     Flask, render_template, request, redirect, url_for, session,
@@ -25,6 +26,21 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "ct2026")
 
 # guarda em memoria a ultima analise gerada por sessao, para o download do PDF
 _REPORT_CACHE = {}
+
+# locks por lead: garantem que duas requisicoes simultaneas de /relatorio/pdf
+# (ex.: download automatico + clique no botao) NAO disparem duas geracoes. A
+# segunda espera a primeira terminar e reaproveita o PDF do cache.
+_REPORT_LOCKS = {}
+_REPORT_LOCKS_GUARD = threading.Lock()
+
+
+def _lead_lock(lead_id):
+    with _REPORT_LOCKS_GUARD:
+        lock = _REPORT_LOCKS.get(lead_id)
+        if lock is None:
+            lock = threading.Lock()
+            _REPORT_LOCKS[lead_id] = lock
+        return lock
 
 
 @app.route("/")
@@ -88,12 +104,18 @@ def relatorio_pdf():
         return ("<h2>Relatório indisponível</h2><p>A chave da API da Anthropic "
                 "(ANTHROPIC_API_KEY) não foi configurada. As respostas já foram salvas. "
                 "Defina a chave e reinicie o app para gerar o PDF.</p>"), 503
-    try:
-        analysis = report.analyze(lead, answers)
-    except Exception as e:
-        return jsonify({"erro": f"Falha ao gerar a análise: {e}"}), 500
-    pdf = report.build_pdf(lead, analysis)
-    _REPORT_CACHE[lead_id] = pdf
+
+    # Serializa a geracao por lead: se outra requisicao ja esta gerando este
+    # relatorio, esta aqui espera no lock e, ao entrar, encontra o cache pronto.
+    with _lead_lock(lead_id):
+        pdf = _REPORT_CACHE.get(lead_id)
+        if pdf is None:
+            try:
+                analysis = report.analyze(lead, answers)
+                pdf = report.build_pdf(lead, analysis)
+            except Exception as e:
+                return jsonify({"erro": f"Falha ao gerar a análise: {e}"}), 500
+            _REPORT_CACHE[lead_id] = pdf
     return send_file(io.BytesIO(pdf), mimetype="application/pdf",
                      as_attachment=True,
                      download_name=f"Estrategia_Marketing_{nome}.pdf")

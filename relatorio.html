@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <div class="report-box">
+    <div class="ico">📄</div>
+    <h1 class="title">Sua estratégia está pronta</h1>
+    <p class="subtitle">{{ lead.get('empresa','') }}</p>
+    <p class="muted">A análise das suas respostas está sendo processada e o relatório
+       completo em PDF da sua estratégia de marketing e aquisição será gerado. O download
+       começa automaticamente ao terminar; se precisar, use o botão abaixo para baixá-lo novamente.</p>
+
+    <a class="btn big" id="dl" href="{{ url_for('relatorio_pdf') }}">⬇ Baixe aqui a estratégia gerada</a>
+    <div class="spin" id="spin">Gerando sua estratégia com IA… isso pode levar até 2 minutos.
+       Não feche esta página — o download começa sozinho ao terminar.</div>
+    <p class="muted" id="err" style="display:none;color:#b00020"></p>
+  </div>
+</div>
+<script>
+  const url = "{{ url_for('relatorio_pdf') }}";
+  const fname = {{ ("Estrategia_Marketing_" + ((lead.get('empresa') or 'estrategia')|replace(' ', '_')) + ".pdf") | tojson }};
+  const dl = document.getElementById('dl');
+  const spin = document.getElementById('spin');
+  const err = document.getElementById('err');
+
+  dl.style.opacity = .5; dl.style.pointerEvents = 'none';
+
+  function baixar(blob){
+    const u = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = u; a.download = fname;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(u), 15000);
+  }
+
+  // Uma unica requisicao com feedback honesto: o spinner fica ate o PDF chegar.
+  // O servidor gera o relatorio 1x e cacheia (lock por lead), entao baixar de
+  // novo pelo botao entrega o MESMO arquivo, sem gerar outra analise.
+  (async () => {
+    try {
+      const r = await fetch(url, { headers: { 'Accept': 'application/pdf' } });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const blob = await r.blob();
+      spin.style.display = 'none';
+      dl.style.opacity = 1; dl.style.pointerEvents = 'auto';
+      baixar(blob);
+    } catch (e) {
+      spin.style.display = 'none';
+      dl.style.opacity = 1; dl.style.pointerEvents = 'auto';
+      err.style.display = 'block';
+      err.textContent = 'Não foi possível concluir agora. Clique no botão acima para baixar a sua estratégia.';
+    }
+  })();
+</script>
+{% endblock %}
