@@ -9,46 +9,49 @@
        completo em PDF da sua estratégia de marketing e aquisição será gerado. O download
        começa automaticamente ao terminar; se precisar, use o botão abaixo para baixá-lo novamente.</p>
 
-    <a class="btn big" id="dl" href="{{ url_for('relatorio_pdf') }}">⬇ Baixe aqui a estratégia gerada</a>
+    <a class="btn big" id="dl" href="{{ url_for('relatorio_pdf') }}" style="display:none">⬇ Baixar a minha estratégia em PDF</a>
     <div class="spin" id="spin">Gerando sua estratégia com IA… isso pode levar até 2 minutos.
-       Não feche esta página — o download começa sozinho ao terminar.</div>
+       Não feche esta página — o download aparece sozinho ao terminar.</div>
     <p class="muted" id="err" style="display:none;color:#b00020"></p>
   </div>
 </div>
 <script>
-  const url = "{{ url_for('relatorio_pdf') }}";
-  const fname = {{ ("Estrategia_Marketing_" + ((lead.get('empresa') or 'estrategia')|replace(' ', '_')) + ".pdf") | tojson }};
-  const dl = document.getElementById('dl');
+  const pdfUrl    = "{{ url_for('relatorio_pdf') }}";
+  const statusUrl = "{{ url_for('relatorio_status') }}";
+  const dl   = document.getElementById('dl');
   const spin = document.getElementById('spin');
-  const err = document.getElementById('err');
+  const err  = document.getElementById('err');
+  let baixouAuto = false;
 
-  dl.style.opacity = .5; dl.style.pointerEvents = 'none';
-
-  function baixar(blob){
-    const u = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = u; a.download = fname;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(u), 15000);
+  function liberarDownload(){
+    spin.style.display = 'none';
+    dl.style.display = 'inline-block';
+    // Tenta iniciar o download automaticamente (desktop). No iPhone pode ser
+    // bloqueado sem toque; por isso o botao fica sempre visivel como garantia.
+    if (!baixouAuto){
+      baixouAuto = true;
+      try { window.location.href = pdfUrl; } catch(e){}
+    }
   }
 
-  // Uma unica requisicao com feedback honesto: o spinner fica ate o PDF chegar.
-  // O servidor gera o relatorio 1x e cacheia (lock por lead), entao baixar de
-  // novo pelo botao entrega o MESMO arquivo, sem gerar outra analise.
-  (async () => {
+  // Consulta curta e repetida: o navegador nunca segura uma requisicao de ~2min
+  // (que o celular cancelaria). Quando o PDF fica pronto no servidor, baixamos
+  // por um LINK NORMAL para o arquivo em cache -> confiavel em qualquer aparelho.
+  async function verificar(){
     try {
-      const r = await fetch(url, { headers: { 'Accept': 'application/pdf' } });
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      const blob = await r.blob();
-      spin.style.display = 'none';
-      dl.style.opacity = 1; dl.style.pointerEvents = 'auto';
-      baixar(blob);
-    } catch (e) {
-      spin.style.display = 'none';
-      dl.style.opacity = 1; dl.style.pointerEvents = 'auto';
-      err.style.display = 'block';
-      err.textContent = 'Não foi possível concluir agora. Clique no botão acima para baixar a sua estratégia.';
-    }
-  })();
+      const r = await fetch(statusUrl, { cache: 'no-store' });
+      const d = await r.json();
+      if (d.state === 'ready'){ liberarDownload(); return; }
+      if (d.state === 'error'){
+        spin.style.display = 'none';
+        dl.style.display = 'inline-block';
+        err.style.display = 'block';
+        err.textContent = 'Houve uma falha ao gerar agora. Toque no botão para tentar baixar novamente.';
+        return;
+      }
+    } catch(e){ /* rede instavel: tenta de novo no proximo ciclo */ }
+    setTimeout(verificar, 4000);
+  }
+  verificar();
 </script>
 {% endblock %}
