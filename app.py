@@ -28,6 +28,11 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "ct2026")
 _REPORT_CACHE = {}
 # Estado da geracao por lead: "pending" | "ready" | "error:<msg>".
 _REPORT_STATUS = {}
+# Cadastro + respostas por lead_id, em memoria. Guardamos aqui (e carregamos o
+# lead_id na URL) para NAO depender do cookie de sessao do Flask: navegadores
+# internos (Instagram/WhatsApp), modo anonimo e bloqueadores de cookie derrubam
+# a sessao e faziam o /relatorio voltar pra home perdendo tudo.
+_LEAD_DATA = {}
 # Protege o inicio da geracao para cada lead nao disparar duas threads.
 _GEN_GUARD = threading.Lock()
 
@@ -83,30 +88,34 @@ def enviar():
     lead_id = storage.new_id()
     storage.save_lead(lead_id, data)
     storage.save_respostas(lead_id, answers)
-    session["lead_id"] = lead_id
-    session["lead"] = data
-    session["answers"] = answers
+    # Guarda no servidor (nao no cookie) e carrega o lead_id na URL do relatorio.
+    _LEAD_DATA[lead_id] = {"lead": data, "answers": answers}
     # Ja comeca a gerar o PDF em segundo plano enquanto o usuario e redirecionado.
     _start_report(lead_id, data, answers)
-    return jsonify({"ok": True, "redirect": url_for("relatorio")})
+    return jsonify({"ok": True, "redirect": url_for("relatorio", lead_id=lead_id)})
 
 
-@app.route("/relatorio")
-def relatorio():
-    if not session.get("answers"):
+def _nome_arquivo(lead):
+    return (lead.get("empresa") or "estrategia").replace(" ", "_")
+
+
+@app.route("/relatorio/<lead_id>")
+def relatorio(lead_id):
+    info = _LEAD_DATA.get(lead_id)
+    if not info:
         return redirect(url_for("index"))
-    return render_template("relatorio.html", lead=session.get("lead", {}))
+    return render_template("relatorio.html", lead=info["lead"], lead_id=lead_id)
 
 
-@app.route("/relatorio/status")
-def relatorio_status():
+@app.route("/relatorio/<lead_id>/status")
+def relatorio_status(lead_id):
     """A pagina consulta este status (rapido) ate o PDF ficar pronto."""
-    lead_id = session.get("lead_id")
-    if not lead_id:
+    info = _LEAD_DATA.get(lead_id)
+    if not info:
         return jsonify({"state": "unknown"})
     # Garante que a geracao esteja em andamento mesmo se o /enviar nao a iniciou.
     if lead_id not in _REPORT_STATUS:
-        _start_report(lead_id, session.get("lead", {}), session.get("answers", {}))
+        _start_report(lead_id, info["lead"], info["answers"])
     st = _REPORT_STATUS.get(lead_id, "pending")
     if st == "ready":
         return jsonify({"state": "ready"})
@@ -115,15 +124,11 @@ def relatorio_status():
     return jsonify({"state": "pending"})
 
 
-@app.route("/relatorio/pdf")
-def relatorio_pdf():
-    if not session.get("answers"):
-        return redirect(url_for("index"))
-    lead = session.get("lead", {})
-    answers = session.get("answers", {})
-    lead_id = session.get("lead_id")
+@app.route("/relatorio/<lead_id>/pdf")
+def relatorio_pdf(lead_id):
     import io
-    nome = (lead.get("empresa") or "estrategia").replace(" ", "_")
+    info = _LEAD_DATA.get(lead_id)
+    nome = _nome_arquivo(info["lead"]) if info else "estrategia"
 
     # Caminho normal: a pagina so chama /relatorio/pdf DEPOIS que /relatorio/status
     # devolve "ready", entao o PDF ja esta no cache e o download e instantaneo.
@@ -133,6 +138,9 @@ def relatorio_pdf():
                          as_attachment=True,
                          download_name=f"Estrategia_Marketing_{nome}.pdf")
 
+    if not info:
+        return redirect(url_for("index"))
+
     if not os.environ.get("ANTHROPIC_API_KEY"):
         return ("<h2>Relatório indisponível</h2><p>A chave da API da Anthropic "
                 "(ANTHROPIC_API_KEY) não foi configurada. As respostas já foram salvas. "
@@ -140,7 +148,7 @@ def relatorio_pdf():
 
     # Fallback (acesso direto ao link antes de ficar pronto): garante a geracao e
     # espera a thread de segundo plano terminar, sem nunca gerar duas vezes.
-    _start_report(lead_id, lead, answers)
+    _start_report(lead_id, info["lead"], info["answers"])
     import time as _time
     for _ in range(300):  # ate ~150s
         st = _REPORT_STATUS.get(lead_id, "pending")
